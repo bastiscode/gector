@@ -66,11 +66,11 @@ class GecBERTModel(object):
                                del_confidence=self.del_conf,
                                ).to(self.device)
             if torch.cuda.is_available():
-                model.load_state_dict(torch.load(model_path), strict=False)
+                model.load_state_dict(torch.load(model_path), strict=True)
             else:
                 model.load_state_dict(torch.load(model_path,
                                                  map_location=torch.device('cpu')),
-                                                 strict=False)
+                                                 strict=True)
             model.eval()
             self.models.append(model)
 
