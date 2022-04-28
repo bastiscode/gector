@@ -1,15 +1,31 @@
 import argparse
+from spacy.lang.en import English
+
+from tqdm import tqdm
 
 from utils.helpers import read_lines, normalize
 from gector.gec_model import GecBERTModel
 
+nlp = English()
+nlp.add_pipe(nlp.create_pipe("sentencizer"))
+
 
 def predict_for_file(input_file, output_file, model, batch_size=32, to_normalize=False):
     test_data = read_lines(input_file)
+    indices = list(range(len(test_data)))
+    test_data, indices = list(zip(*sorted(list(zip(test_data, indices)), key=lambda e: len(e[0]), reverse=True)))
+
+    input_test_data = []
+    input_indices = []
+    for line, idx in zip(test_data, indices):
+        for sent in nlp(line).sents:
+            input_test_data.append(str(sent))
+            input_indices.append(idx)
+
     predictions = []
     cnt_corrections = 0
     batch = []
-    for sent in test_data:
+    for sent in tqdm(input_test_data, desc="predicting file"):
         batch.append(sent.split())
         if len(batch) == batch_size:
             preds, cnt = model.handle_batch(batch)
@@ -25,8 +41,14 @@ def predict_for_file(input_file, output_file, model, batch_size=32, to_normalize
     if to_normalize:
         result_lines = [normalize(line) for line in result_lines]
 
+    # reorder
+    result_lines_out = [[] for _ in range(len(test_data))]
+    for idx, result_line in zip(input_indices, result_lines):
+        result_lines_out[idx].append(result_line)
+
+    result_lines_out = [" ".join(lines) for lines in result_lines_out]
     with open(output_file, 'w') as f:
-        f.write("\n".join(result_lines) + '\n')
+        f.write("\n".join(result_lines_out) + '\n')
     return cnt_corrections
 
 
