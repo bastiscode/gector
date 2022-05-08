@@ -1,4 +1,6 @@
 import argparse
+import time
+
 from spacy.lang.en import English
 
 from tqdm import tqdm
@@ -68,11 +70,13 @@ def main(args):
                          is_ensemble=args.is_ensemble,
                          weigths=args.weights)
 
+    start = time.perf_counter()
     cnt_corrections = predict_for_file(args.input_file, args.output_file, model,
                                        batch_size=args.batch_size, 
                                        to_normalize=args.normalize)
+    end = time.perf_counter()
     # evaluate with m2 or ERRANT
-    print(f"Produced overall corrections: {cnt_corrections}")
+    print(f"Produced overall corrections: {cnt_corrections}, runtime: {end - start:.2f}s")
 
 
 if __name__ == '__main__':
