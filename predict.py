@@ -1,28 +1,70 @@
 import argparse
 import time
+from typing import List
 
-from spacy.lang.en import English
+import spacy
+from spacy.lang.en import TOKENIZER_EXCEPTIONS
 
 from tqdm import tqdm
 
 from utils.helpers import read_lines, normalize
 from gector.gec_model import GecBERTModel
 
-nlp = English()
-nlp.add_pipe(nlp.create_pipe("sentencizer"))
+nlp = spacy.load("en_core_web_sm")
+
+
+def fix_sequence(sequence: str) -> str:
+    whitespaces = []
+    doc = nlp(sequence)
+    words = [token.text for token in doc]
+    num_quotes = 0
+    for i, token in enumerate(doc):
+        next_token = doc[i + 1] if i < len(doc) - 1 else None
+
+        add_with_ws = True
+
+        if next_token is not None:
+            if token.is_quote:
+                num_quotes += 1
+                if num_quotes % 2 == 1:
+                    add_with_ws = False
+
+            if next_token.is_quote and num_quotes % 2 == 1:
+                add_with_ws = False
+
+            if token.text + next_token.text in TOKENIZER_EXCEPTIONS:
+                add_with_ws = False
+
+            if (token.is_left_punct and not token.is_quote) or token.text == "-":
+                add_with_ws = False
+
+            if (next_token.is_right_punct and not next_token.is_quote) \
+                    or (next_token.is_punct and not next_token.is_right_punct and not next_token.is_left_punct):
+                add_with_ws = False
+
+            if next_token.text == "'s":
+                add_with_ws = False
+
+        else:
+            add_with_ws = False
+
+        whitespaces.append(add_with_ws)
+
+    out_sequence = ""
+    for word, ws in zip(words, whitespaces):
+        out_sequence += word + ws * " "
+    return out_sequence
 
 
 def predict_for_file(input_file, output_file, model, batch_size=32, to_normalize=False):
     test_data = read_lines(input_file)
     indices = list(range(len(test_data)))
-    test_data, indices = list(zip(*sorted(list(zip(test_data, indices)), key=lambda e: len(e[0]), reverse=True)))
+    test_data, input_indices = list(zip(*sorted(list(zip(test_data, indices)), key=lambda e: len(e[0]), reverse=True)))
 
     input_test_data = []
-    input_indices = []
     for line, idx in zip(test_data, indices):
-        for sent in nlp(line).sents:
-            input_test_data.append(str(sent))
-            input_indices.append(idx)
+        doc = nlp(line)
+        input_test_data.append(" ".join([token.text for token in doc]))
 
     predictions = []
     cnt_corrections = 0
@@ -44,13 +86,13 @@ def predict_for_file(input_file, output_file, model, batch_size=32, to_normalize
         result_lines = [normalize(line) for line in result_lines]
 
     # reorder
-    result_lines_out = [[] for _ in range(len(test_data))]
+    result_lines_out: List[str] = ["" for _ in range(len(test_data))]
     for idx, result_line in zip(input_indices, result_lines):
-        result_lines_out[idx].append(result_line)
+        result_line = fix_sequence(result_line)
+        result_lines_out[idx] = result_line
 
-    result_lines_out = [" ".join(lines) for lines in result_lines_out]
     with open(output_file, 'w') as f:
-        f.write("\n".join(result_lines_out) + '\n')
+        f.write("\n".join(result_lines_out) + "\n")
     return cnt_corrections
 
 
